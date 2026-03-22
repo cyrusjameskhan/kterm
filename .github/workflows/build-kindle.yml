@@ -34,7 +34,7 @@ jobs:
             autoconf automake libtool make \
             intltool libxml-parser-perl \
             libglib2.0-dev \
-            wget xz-utils ca-certificates
+            wget xz-utils bzip2 ca-certificates
 
           # armhf cross-compile targets (GTK2, ncurses, dbus — no VTE from apt)
           # libwebp/libzstd needed at link time (GTK2 transitive deps via pkg-config),
@@ -48,8 +48,8 @@ jobs:
 
           # Build libvte 0.28.2 from source — static, armhf
           cd /tmp
-          wget -q https://download.gnome.org/sources/vte/0.28/vte-0.28.2.tar.xz
-          tar xf vte-0.28.2.tar.xz
+          wget -q https://download.gnome.org/sources/vte/0.28/vte-0.28.2.tar.bz2
+          tar xjf vte-0.28.2.tar.bz2
           cd vte-0.28.2
           ./configure \
             --host=arm-linux-gnueabihf \
