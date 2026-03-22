@@ -55,7 +55,7 @@ AM_COND_IF(
     LIBS=
     AC_SEARCH_LIBS(
       [tgetent],
-      [curses ncurses readline termcap],
+      [tinfo curses ncurses readline termcap],
       [TERMCAP_LIBS=$LIBS],
       [AC_MSG_WARN([libtermcap is needed for static build])])
     LIBS=$saved_LIBS
