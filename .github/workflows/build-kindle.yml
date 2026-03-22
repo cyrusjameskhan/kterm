@@ -15,13 +15,19 @@ jobs:
     - name: Set up armhf cross-compilation
       run: |
         sudo dpkg --add-architecture armhf
-        # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe
-        sudo sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
-        sudo sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
-        # Add armhf binary packages from ports.ubuntu.com
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+
+        # Restrict ALL existing sources to amd64 only (handles both http:// and https://)
+        # so apt doesn't try to fetch armhf from security.ubuntu.com (which has no armhf).
+        sudo sed -i '/^\s*deb\s*\[/!s/^\s*deb\s/deb [arch=amd64] /' /etc/apt/sources.list
+        sudo find /etc/apt/sources.list.d/ -name "*.list" \
+          -exec sudo sed -i '/^\s*deb\s*\[/!s/^\s*deb\s/deb [arch=amd64] /' {} \;
+
+        # Add armhf binary packages from ports.ubuntu.com in a separate list file
+        printf '%s\n' \
+          'deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse' \
+          'deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse' \
+          'deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse' \
+          | sudo tee /etc/apt/sources.list.d/armhf-ports.list
         sudo apt-get update -qq
 
         # Install all packages in ONE call so apt resolves conflicts upfront.
