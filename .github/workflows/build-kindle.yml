@@ -21,8 +21,7 @@ jobs:
           # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe + src
           sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
           sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
-          # Enable source packages from archive.ubuntu.com (for apt-get source vte)
-          echo "deb-src [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main universe" >> /etc/apt/sources.list
+          # (No deb-src needed — orig tarball downloaded directly from pool below)
           # Add armhf binary packages from ports.ubuntu.com
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
@@ -36,7 +35,7 @@ jobs:
             autoconf automake libtool make \
             intltool libxml-parser-perl \
             libglib2.0-dev \
-            dpkg-dev
+            curl
 
           # armhf cross-compile targets
           # libwebp/libzstd needed at link time (GTK2 transitive deps via pkg-config);
@@ -53,11 +52,12 @@ jobs:
           # If we remove it after, vte.pc lists -ltinfo which is not on the Kindle.
           rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
 
-          # Fetch libvte 0.28.2 source via apt-get source (archive.ubuntu.com — always reachable)
+          # Fetch VTE 0.28.2 orig tarball directly from Ubuntu pool (no deb-src needed)
           mkdir -p /tmp/vte-src && cd /tmp/vte-src
-          apt-get source --download-only libvte9
-          dpkg-source -x vte_*.dsc vte-build
-          cd vte-build
+          curl -sLo vte.orig.tar.xz \
+            "http://archive.ubuntu.com/ubuntu/pool/main/v/vte/vte_0.28.2.orig.tar.xz"
+          tar xJf vte.orig.tar.xz
+          cd vte-0.28.2
           ./configure \
             --host=arm-linux-gnueabihf \
             --prefix=/opt/vte-static \
