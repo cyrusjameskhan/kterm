@@ -27,21 +27,18 @@ jobs:
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
           apt-get update -qq
 
-          # amd64 build tools
-          # libglib2.0-dev-bin: provides glib-mkenums/glib-genmarshal (perl scripts,
-          # run on host during VTE build) without the amd64 headers that conflict with armhf.
+          # Install all packages in ONE call so apt resolves conflicts upfront.
+          # Two separate calls caused the second to silently remove gcc-arm-linux-gnueabihf
+          # due to a multiarch conflict with libncurses5-dev:armhf.
+          # libglib2.0-dev-bin: glib-mkenums/glib-genmarshal for VTE build (no amd64 headers).
+          # libwebp/libzstd:armhf needed at link time (GTK2 pkg-config transitive deps).
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
             autoconf automake libtool make \
             intltool libxml-parser-perl \
             libglib2.0-dev-bin \
-            curl
-
-          # armhf cross-compile targets
-          # libwebp/libzstd needed at link time (GTK2 transitive deps via pkg-config);
-          # --as-needed drops them from NEEDED since kterm never calls into them.
-          apt-get install -y --no-install-recommends \
+            curl \
             libgtk2.0-dev:armhf \
             libncurses5-dev:armhf \
             libdbus-1-dev:armhf \
