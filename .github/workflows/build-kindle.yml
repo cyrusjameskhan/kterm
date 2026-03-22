@@ -18,13 +18,15 @@ jobs:
           set -e
           export DEBIAN_FRONTEND=noninteractive
           dpkg --add-architecture armhf
-          # Enable universe (libvte-common is there); add armhf from ports.ubuntu.com
+          # Enable universe (for libvte-common), then restrict to [arch=amd64] (still serves arch=all)
           sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
+          sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
+          # Add armhf binary packages from ports.ubuntu.com
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
-          # archive.ubuntu.com 404s for armhf binary are non-fatal; arch=all packages still served
-          apt-get update || true
+          # Clean update: archive.ubuntu.com restricted to amd64 (no 404s), ports has armhf
+          apt-get update -qq
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
