@@ -12,49 +12,34 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Add armhf architecture and update
+    - name: Build ARM binary in Docker (clean Ubuntu 22.04 + armhf multiarch)
       run: |
-        sudo dpkg --add-architecture armhf
-        # Add armhf sources from ports.ubuntu.com before updating
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
-        # Update all sources; security.ubuntu.com 404s for armhf are non-fatal
-        sudo apt-get update 2>&1 | grep -v "^E:" || true
-        # Ensure the armhf indices from ports.ubuntu.com are loaded
-        sudo apt-get update -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/armhf.list
-
-    - name: Install ARM cross-compiler and ARM GTK2/VTE libraries
-      run: |
-        sudo apt-get install -y \
-          gcc-arm-linux-gnueabihf \
-          pkg-config \
-          libgtk2.0-dev:armhf \
-          libvte-dev:armhf \
-          libtinfo-dev:armhf \
-          libdbus-1-dev:armhf \
-          autoconf automake
-
-    - name: Configure pkg-config for cross-build
-      run: |
-        echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
-        echo "PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
-        echo "PKG_CONFIG_SYSROOT_DIR=" >> $GITHUB_ENV
-
-    - name: Run autogen
-      run: ./autogen.sh
-
-    - name: Configure for Kindle ARM (armhf, GTK2)
-      run: |
-        ./configure \
-          --host=arm-linux-gnueabihf \
-          --enable-kindle \
-          CC=arm-linux-gnueabihf-gcc \
-          PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
-          CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard"
-
-    - name: Build
-      run: make -j$(nproc)
+        docker run --rm -v "$PWD:/work" -w /work ubuntu:22.04 bash -c '
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          dpkg --add-architecture armhf
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            gcc-arm-linux-gnueabihf \
+            pkg-config \
+            libgtk2.0-dev:armhf \
+            libvte-dev:armhf \
+            libtinfo-dev:armhf \
+            libdbus-1-dev:armhf \
+            autoconf automake make
+          PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
+          PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+          export PKG_CONFIG_PATH PKG_CONFIG_LIBDIR
+          ./autogen.sh
+          ./configure \
+            --host=arm-linux-gnueabihf \
+            --enable-kindle \
+            CC=arm-linux-gnueabihf-gcc \
+            PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
+            CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard"
+          make -j$(nproc)
+        '
 
     - name: Verify ARM binary
       run: file kterm
