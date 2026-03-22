@@ -27,17 +27,21 @@ jobs:
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
           # Clean update: archive.ubuntu.com restricted to amd64 (no 404s), ports has armhf
           apt-get update -qq
-          echo "=== libvte9:armhf policy ===" && apt-cache policy libvte9:armhf 2>&1 || true
-          echo "=== libvte-common policy ===" && apt-cache policy libvte-common 2>&1 || true
-          echo "=== libvte9:armhf dry run ===" && apt-get install --dry-run libvte9:armhf 2>&1 | tail -20 || true
+          # Install amd64 tools and non-broken armhf packages via apt
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
             libgtk2.0-dev:armhf \
-            libvte-dev:armhf \
             libtinfo-dev:armhf \
             libdbus-1-dev:armhf \
             autoconf automake make
+          # libvte-dev:armhf has a broken dep chain (libvte-common M-A:foreign bug).
+          # Work around: download debs and extract manually for cross-compilation headers/libs.
+          mkdir -p /tmp/vte-extract
+          cd /tmp/vte-extract
+          apt-get download libvte-common libvte9:armhf libvte-dev:armhf 2>&1
+          for deb in *.deb; do dpkg-deb -x "$deb" /; done
+          cd /work
           export PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
           export PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
           ./autogen.sh
