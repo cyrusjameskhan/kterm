@@ -18,10 +18,12 @@ jobs:
           set -e
           export DEBIAN_FRONTEND=noninteractive
           dpkg --add-architecture armhf
-          # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe
+          # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe + src
           sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
           sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
-          # Add armhf packages from ports.ubuntu.com
+          # Enable source packages from archive.ubuntu.com (for apt-get source vte)
+          echo "deb-src [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main universe" >> /etc/apt/sources.list
+          # Add armhf binary packages from ports.ubuntu.com
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
@@ -34,11 +36,11 @@ jobs:
             autoconf automake libtool make \
             intltool libxml-parser-perl \
             libglib2.0-dev \
-            wget xz-utils bzip2 ca-certificates
+            dpkg-dev
 
-          # armhf cross-compile targets (GTK2, ncurses, dbus — no VTE from apt)
-          # libwebp/libzstd needed at link time (GTK2 transitive deps via pkg-config),
-          # but --as-needed drops them from NEEDED since kterm doesn't use them directly.
+          # armhf cross-compile targets
+          # libwebp/libzstd needed at link time (GTK2 transitive deps via pkg-config);
+          # --as-needed drops them from NEEDED since kterm never calls into them.
           apt-get install -y --no-install-recommends \
             libgtk2.0-dev:armhf \
             libncurses5-dev:armhf \
@@ -46,11 +48,11 @@ jobs:
             libwebp-dev:armhf \
             libzstd-dev:armhf
 
-          # Build libvte 0.28.2 from source — static, armhf
-          cd /tmp
-          wget -q https://download.gnome.org/sources/vte/0.28/vte-0.28.2.tar.bz2
-          tar xjf vte-0.28.2.tar.bz2
-          cd vte-0.28.2
+          # Fetch libvte 0.28.2 source via apt-get source (archive.ubuntu.com — always reachable)
+          mkdir -p /tmp/vte-src && cd /tmp/vte-src
+          apt-get source --download-only libvte9
+          dpkg-source -x vte_*.dsc vte-build
+          cd vte-build
           ./configure \
             --host=arm-linux-gnueabihf \
             --prefix=/opt/vte-static \
