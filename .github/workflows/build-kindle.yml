@@ -28,8 +28,8 @@ jobs:
           apt-get update -qq
 
           # Install all packages in ONE call so apt resolves conflicts upfront.
-          # Two separate calls caused the second to silently remove gcc-arm-linux-gnueabihf
-          # due to a multiarch conflict with libncurses5-dev:armhf.
+          # Use libncurses-dev:armhf (ncurses6), NOT libncurses5-dev:armhf — the latter
+          # conflicts with libncurses-dev:amd64 which gcc-arm-linux-gnueabihf depends on.
           # libglib2.0-dev-bin: glib-mkenums/glib-genmarshal for VTE build (no amd64 headers).
           # libwebp/libzstd:armhf needed at link time (GTK2 pkg-config transitive deps).
           apt-get install -y --no-install-recommends \
@@ -40,7 +40,7 @@ jobs:
             libglib2.0-dev-bin \
             curl \
             libgtk2.0-dev:armhf \
-            libncurses5-dev:armhf \
+            libncurses-dev:armhf \
             libdbus-1-dev:armhf \
             libwebp-dev:armhf \
             libzstd-dev:armhf
