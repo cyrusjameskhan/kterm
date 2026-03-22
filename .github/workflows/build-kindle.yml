@@ -12,42 +12,62 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build ARM binary in Docker (clean Ubuntu 22.04 + armhf multiarch)
+    - name: Build ARM binary in Docker (static VTE from source)
       run: |
         docker run --rm -v "$PWD:/work" -w /work ubuntu:22.04 bash -c '
           set -e
           export DEBIAN_FRONTEND=noninteractive
           dpkg --add-architecture armhf
-          # Enable universe (for libvte-common), then restrict to [arch=amd64] (still serves arch=all)
+          # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe
           sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
           sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
-          # Add armhf binary packages from ports.ubuntu.com
+          # Add armhf packages from ports.ubuntu.com
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
-          # Clean update: archive.ubuntu.com restricted to amd64 (no 404s), ports has armhf
           apt-get update -qq
-          # Install amd64 tools and non-broken armhf packages via apt
+
+          # amd64 build tools
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
+            autoconf automake libtool make \
+            intltool libxml-parser-perl \
+            libglib2.0-dev \
+            wget xz-utils ca-certificates
+
+          # armhf cross-compile targets (GTK2, ncurses, dbus — no VTE from apt)
+          apt-get install -y --no-install-recommends \
             libgtk2.0-dev:armhf \
             libncurses5-dev:armhf \
-            libdbus-1-dev:armhf \
-            libwebp-dev:armhf \
-            libzstd-dev:armhf \
-            autoconf automake make
-          # libvte-dev:armhf has a broken dep chain (libvte-common M-A:foreign bug).
-          # Work around: download debs and extract manually for cross-compilation headers/libs.
-          mkdir -p /tmp/vte-extract
-          cd /tmp/vte-extract
-          apt-get download libvte-common libvte9:armhf libvte-dev:armhf 2>&1
-          for deb in *.deb; do dpkg-deb -x "$deb" /; done
+            libdbus-1-dev:armhf
+
+          # Build libvte 0.28.2 from source — static, armhf
+          cd /tmp
+          wget -q https://download.gnome.org/sources/vte/0.28/vte-0.28.2.tar.xz
+          tar xf vte-0.28.2.tar.xz
+          cd vte-0.28.2
+          ./configure \
+            --host=arm-linux-gnueabihf \
+            --prefix=/opt/vte-static \
+            --enable-static \
+            --disable-shared \
+            --disable-python \
+            --disable-gnome-pty-helper \
+            CC=arm-linux-gnueabihf-gcc \
+            PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
+            CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
+            PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
+            PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+          make -j$(nproc)
+          make install
+
+          # Build kterm — link VTE statically from /opt/vte-static
           cd /work
           # Remove libtinfo.so symlink so configure falls back to libncurses.so.5 (what Kindle has)
           rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
-          export PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
-          export PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+          export PKG_CONFIG_PATH=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig
+          export PKG_CONFIG_LIBDIR=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
           ./autogen.sh
           ./configure \
             --host=arm-linux-gnueabihf \
@@ -55,7 +75,7 @@ jobs:
             CC=arm-linux-gnueabihf-gcc \
             PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
             CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-            LDFLAGS="-Wl,--as-needed -Wl,-Bstatic -lvte -Wl,-Bdynamic"
+            LDFLAGS="-Wl,--as-needed -L/opt/vte-static/lib -Wl,-Bstatic -lvte -Wl,-Bdynamic"
           make -j$(nproc)
           echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
         '
