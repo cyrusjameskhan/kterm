@@ -50,6 +50,11 @@ jobs:
           # If removed after, vte.pc lists -ltinfo which is absent on the Kindle.
           rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
 
+          # Ensure cross-compiler is reachable (non-interactive bash may have trimmed PATH)
+          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          echo "PATH=$PATH"
+          find /usr -name "arm-linux-gnueabihf-gcc*" 2>/dev/null | sort
+
           # Sanity-check the cross-compiler before building VTE
           echo "int main(){}" | arm-linux-gnueabihf-gcc -x c - -o /tmp/cc_test && echo "CC OK" || echo "CC BROKEN"
           arm-linux-gnueabihf-gcc -v 2>&1 | tail -3
