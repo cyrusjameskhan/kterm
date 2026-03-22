@@ -53,6 +53,10 @@ jobs:
           # If removed after, vte.pc lists -ltinfo which is absent on the Kindle.
           rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
 
+          # Sanity-check the cross-compiler before building VTE
+          echo "int main(){}" | arm-linux-gnueabihf-gcc -x c - -o /tmp/cc_test && echo "CC OK" || echo "CC BROKEN"
+          arm-linux-gnueabihf-gcc -v 2>&1 | tail -3
+
           # Fetch VTE 0.28.2 orig tarball directly from Ubuntu pool (no deb-src needed)
           mkdir -p /tmp/vte-src && cd /tmp/vte-src
           curl -sLo vte.orig.tar.xz \
@@ -71,7 +75,7 @@ jobs:
             CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
             PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
             PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig \
-          || { echo "=== config.log (last 40 lines) ==="; tail -40 config.log; exit 1; }
+          || { echo "=== config.log (first 100 lines) ==="; head -100 config.log; exit 1; }
           make -j$(nproc)
           make install
 
