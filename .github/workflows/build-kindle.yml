@@ -49,11 +49,6 @@ jobs:
           libwebp-dev:armhf \
           libzstd-dev:armhf
 
-        # Remove libtinfo.so BEFORE building libvte so that libvte's configure
-        # falls back to -lncurses (present as libncurses.so.5 on Kindle).
-        # If removed after, vte.pc lists -ltinfo which is absent on the Kindle.
-        sudo rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
-
         # Sanity-check the cross-compiler
         arm-linux-gnueabihf-gcc --version
         echo "int main(){}" | arm-linux-gnueabihf-gcc -x c - -o /tmp/cc_test && echo "CC OK"
