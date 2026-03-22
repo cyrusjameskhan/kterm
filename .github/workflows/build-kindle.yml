@@ -7,24 +7,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Add armhf architecture
+    - name: Add armhf architecture and update
       run: |
         sudo dpkg --add-architecture armhf
-        # Update amd64 indices first (ignore armhf failures from security mirror)
-        sudo apt-get update 2>&1 | tail -5 || true
-        # Add armhf-only sources from ports.ubuntu.com
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
-        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
-        # Update ONLY the armhf sources (avoids security.ubuntu.com 404s)
-        sudo apt-get update \
-          -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/armhf.list \
-          -o Dir::Etc::sourceparts=/dev/null
+        sudo apt-get update -qq
 
     - name: Install ARM cross-compiler and ARM GTK2/VTE libraries
       run: |
