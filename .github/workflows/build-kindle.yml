@@ -15,10 +15,12 @@ jobs:
     - name: Add armhf architecture
       run: |
         sudo dpkg --add-architecture armhf
-        # Show current apt sources for debugging
-        echo "=== sources.list ===" && cat /etc/apt/sources.list 2>/dev/null || true
-        echo "=== sources.list.d ===" && ls /etc/apt/sources.list.d/ && cat /etc/apt/sources.list.d/*.list 2>/dev/null || true
-        echo "=== .sources files ===" && cat /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+        # Add armhf sources from ports.ubuntu.com
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+        # Update — ignore 404s from security.ubuntu.com (it has no armhf; main mirror does)
+        sudo apt-get update || true
 
     - name: Install ARM cross-compiler and ARM GTK2/VTE libraries
       run: |
