@@ -27,6 +27,9 @@ jobs:
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
           # Clean update: archive.ubuntu.com restricted to amd64 (no 404s), ports has armhf
           apt-get update -qq
+          echo "=== libvte9:armhf policy ===" && apt-cache policy libvte9:armhf 2>&1 || true
+          echo "=== libvte-common policy ===" && apt-cache policy libvte-common 2>&1 || true
+          echo "=== libvte9:armhf dry run ===" && apt-get install --dry-run libvte9:armhf 2>&1 | tail -20 || true
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
