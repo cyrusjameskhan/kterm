@@ -65,7 +65,7 @@ AM_COND_IF(
 
   AC_MSG_CHECKING([whether libvte may be linked statically])
   dnl This will only work with GNU linker
-  [VTE_STATIC_LIBS=`echo "-Wl,--as-needed $VTE_LIBS -Wl,--no-as-needed" | sed -e "s/\(-lvte[-_.0-9]*\)/-Wl,-Bstatic \1 -Wl,-Bdynamic $TERMCAP_LIBS/g"`]
+  [VTE_STATIC_LIBS=`echo "-Wl,--as-needed $VTE_LIBS -Wl,--no-as-needed" | sed -e "s/\(-lvte[-_.0-9]*\)/-Wl,-Bstatic \1 $TERMCAP_LIBS -Wl,-Bdynamic/g" -e "s/ -l\(tinfo\|ncurses\|termcap\|readline\)//g"`]
   saved_CFLAGS=$CFLAGS
   saved_LIBS=$LIBS
   CFLAGS="$GTK_CFLAGS $VTE_CFLAGS"
