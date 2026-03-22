@@ -18,10 +18,9 @@ jobs:
           set -e
           export DEBIAN_FRONTEND=noninteractive
           dpkg --add-architecture armhf
-          # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe + src
+          # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe
           sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
           sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
-          # (No deb-src needed — orig tarball downloaded directly from pool below)
           # Add armhf binary packages from ports.ubuntu.com
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
@@ -29,12 +28,14 @@ jobs:
           apt-get update -qq
 
           # amd64 build tools
+          # libglib2.0-dev-bin: provides glib-mkenums/glib-genmarshal (perl scripts,
+          # run on host during VTE build) without the amd64 headers that conflict with armhf.
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
             autoconf automake libtool make \
             intltool libxml-parser-perl \
-            libglib2.0-dev \
+            libglib2.0-dev-bin \
             curl
 
           # armhf cross-compile targets
@@ -49,7 +50,7 @@ jobs:
 
           # Remove libtinfo.so BEFORE building libvte so that libvte's configure
           # falls back to -lncurses (present as libncurses.so.5 on Kindle).
-          # If we remove it after, vte.pc lists -ltinfo which is not on the Kindle.
+          # If removed after, vte.pc lists -ltinfo which is absent on the Kindle.
           rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
 
           # Fetch VTE 0.28.2 orig tarball directly from Ubuntu pool (no deb-src needed)
@@ -69,11 +70,12 @@ jobs:
             PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
             CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
             PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
-            PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+            PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig \
+          || { echo "=== config.log (last 40 lines) ==="; tail -40 config.log; exit 1; }
           make -j$(nproc)
           make install
 
-          # Build kterm — kterm's configure.ac handles static VTE detection automatically
+          # Build kterm — configure.ac handles static VTE detection automatically
           cd /work
           export PKG_CONFIG_PATH=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig
           export PKG_CONFIG_LIBDIR=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
@@ -83,7 +85,8 @@ jobs:
             --enable-kindle \
             CC=arm-linux-gnueabihf-gcc \
             PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
-            CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard"
+            CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
+          || { echo "=== config.log (last 40 lines) ==="; tail -40 config.log; exit 1; }
           make -j$(nproc)
           echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
         '
