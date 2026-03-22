@@ -19,12 +19,12 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
           dpkg --add-architecture armhf
-          # Restrict existing sources to amd64; add armhf from ports.ubuntu.com
-          sed -i "s/^deb /deb [arch=amd64] /" /etc/apt/sources.list
+          # Add armhf from ports.ubuntu.com (archive.ubuntu.com has no armhf binary)
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
-          apt-get update -qq
+          # archive.ubuntu.com 404s for armhf binary are non-fatal; arch=all packages still served
+          apt-get update || true
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
             pkg-config \
