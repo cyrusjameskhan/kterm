@@ -135,6 +135,13 @@ KTconf *parse_config(void) {
                 D printf("cursor_shape = %c\n", conf->cursor_shape);
             }
         }
+        else if (!strncmp(buf, "api_key", 7)) {
+            gchar str[200];
+            str[0] = '\0';
+            sscanf(buf, "api_key = %199s", str);
+            snprintf(conf->api_key, sizeof(conf->api_key), "%s", str);
+            D printf("api_key = [set]\n");
+        }
     }
     
     fclose(fp);

@@ -1,0 +1,60 @@
+name: Build kterm for Kindle (ARM)
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Add armhf architecture
+      run: |
+        sudo dpkg --add-architecture armhf
+        sudo apt-get update -qq
+
+    - name: Install ARM cross-compiler and ARM GTK2/VTE libraries
+      run: |
+        sudo apt-get install -y \
+          gcc-arm-linux-gnueabihf \
+          pkg-config \
+          libgtk2.0-dev:armhf \
+          libvte-dev:armhf \
+          libtinfo-dev:armhf \
+          libdbus-1-dev:armhf \
+          autoconf automake
+
+    - name: Configure pkg-config for cross-build
+      run: |
+        echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
+        echo "PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
+        echo "PKG_CONFIG_SYSROOT_DIR=" >> $GITHUB_ENV
+
+    - name: Run autogen
+      run: ./autogen.sh
+
+    - name: Configure for Kindle ARM (armhf, GTK2)
+      run: |
+        ./configure \
+          --host=arm-linux-gnueabihf \
+          --enable-kindle \
+          CC=arm-linux-gnueabihf-gcc \
+          PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
+          CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard"
+
+    - name: Build
+      run: make -j$(nproc)
+
+    - name: Verify ARM binary
+      run: file kterm
+
+    - name: Upload kterm binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: kterm-kindle-armhf
+        path: kterm
+        retention-days: 30

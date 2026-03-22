@@ -99,6 +99,13 @@ extern gboolean debug;
 /** Unused variable */
 #define UNUSED(x) (void)(x)
 
+/** Voice recording temp file */
+#define VOICE_REC_FILE "/tmp/kterm_voice.wav"
+/** OpenAI transcription endpoint */
+#define VOICE_API_URL "https://api.openai.com/v1/audio/transcriptions"
+/** OpenAI transcription model */
+#define VOICE_MODEL "gpt-4o-mini-transcribe"
+
 /** Kterm config */
 typedef struct {
     gboolean kb_on; /** Keyboard visibility */
@@ -110,6 +117,7 @@ typedef struct {
     gchar kb_conf_path[PATH_MAX];  /** Keyboard config path */
     gchar orientation;  /** Screen orientation: 'U', 'R' or 'L' */
     gchar orientation_saved;  /** Initial screen orientation: 'U', 'R' or 'L' */
+    gchar api_key[200]; /** OpenAI API key for voice transcription */
 } KTconf;
 
 KTconf * parse_config(void);

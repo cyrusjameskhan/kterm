@@ -385,6 +385,232 @@ static void menu_deactivate_cb(GtkWidget *widget, gpointer data) {
 }
 #endif
 
+/* ── Voice input ─────────────────────────────────────────────────────────── */
+
+/** PID of the running arecord process, 0 if not recording */
+static GPid voice_rec_pid = 0;
+/** Voice panel widget (NULL until first toggle) */
+static GtkWidget *voice_panel = NULL;
+
+/**
+ * Context for async curl/transcription I/O
+ */
+typedef struct {
+    VteTerminal *terminal;
+    GIOChannel  *channel;
+    GString     *response;
+    GPid         child_pid;
+} VoiceCtx;
+
+/**
+ * GIOChannel callback — collects curl stdout then injects text into VTE
+ */
+static gboolean voice_transcribe_output(GIOChannel *ch, GIOCondition cond, gpointer data) {
+    VoiceCtx *ctx = data;
+    if (cond & G_IO_IN) {
+        gchar buf[4096];
+        gsize n = 0;
+        GIOStatus st = g_io_channel_read_chars(ch, buf, sizeof(buf) - 1, &n, NULL);
+        if (st == G_IO_STATUS_NORMAL && n > 0) {
+            buf[n] = '\0';
+            g_string_append(ctx->response, buf);
+            return TRUE;
+        }
+    }
+    /* EOF or error — strip trailing newline and feed child */
+    while (ctx->response->len > 0) {
+        gchar last = ctx->response->str[ctx->response->len - 1];
+        if (last == '\n' || last == '\r') {
+            g_string_truncate(ctx->response, ctx->response->len - 1);
+        } else { break; }
+    }
+    if (ctx->response->len > 0) {
+        vte_terminal_feed_child(ctx->terminal,
+                                ctx->response->str,
+                                (gssize) ctx->response->len);
+    }
+    g_io_channel_shutdown(ch, FALSE, NULL);
+    g_io_channel_unref(ch);
+    g_string_free(ctx->response, TRUE);
+    g_spawn_close_pid(ctx->child_pid);
+    g_free(ctx);
+    return FALSE;
+}
+
+/** REC button — start arecord on the BT/default audio device */
+static void voice_rec_cb(GtkWidget *widget, gpointer terminal) {
+    UNUSED(widget); UNUSED(terminal);
+    if (voice_rec_pid) {
+        kill(voice_rec_pid, SIGTERM);
+        g_spawn_close_pid(voice_rec_pid);
+        voice_rec_pid = 0;
+    }
+    g_unlink(VOICE_REC_FILE);
+    /* Try bluealsa first, fall back to default */
+    gchar *argv_blue[] = { "arecord", "-D", "bluealsa",
+                           "-f", "S16_LE", "-r", "16000", "-c", "1",
+                           VOICE_REC_FILE, NULL };
+    gchar *argv_def[]  = { "arecord",
+                           "-f", "S16_LE", "-r", "16000", "-c", "1",
+                           VOICE_REC_FILE, NULL };
+    GError *err = NULL;
+    if (!g_spawn_async(NULL, argv_blue, NULL,
+                       G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                       NULL, NULL, &voice_rec_pid, &err)) {
+        g_clear_error(&err);
+        g_spawn_async(NULL, argv_def, NULL,
+                      G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                      NULL, NULL, &voice_rec_pid, NULL);
+    }
+}
+
+/** STOP button — stop recording without sending */
+static void voice_stop_cb(GtkWidget *widget, gpointer terminal) {
+    UNUSED(widget); UNUSED(terminal);
+    if (voice_rec_pid) {
+        kill(voice_rec_pid, SIGTERM);
+        g_spawn_close_pid(voice_rec_pid);
+        voice_rec_pid = 0;
+    }
+}
+
+/** CLEAR button — stop recording and discard */
+static void voice_clear_cb(GtkWidget *widget, gpointer terminal) {
+    UNUSED(widget); UNUSED(terminal);
+    if (voice_rec_pid) {
+        kill(voice_rec_pid, SIGTERM);
+        g_spawn_close_pid(voice_rec_pid);
+        voice_rec_pid = 0;
+    }
+    g_unlink(VOICE_REC_FILE);
+}
+
+/** ENTER button — send a newline to the terminal */
+static void voice_enter_cb(GtkWidget *widget, gpointer terminal) {
+    UNUSED(widget);
+    vte_terminal_feed_child(VTE_TERMINAL(terminal), "\r", 1);
+}
+
+/** SEND button — stop recording, call Whisper API, inject transcribed text */
+static void voice_send_cb(GtkWidget *widget, gpointer terminal) {
+    UNUSED(widget);
+    if (voice_rec_pid) {
+        kill(voice_rec_pid, SIGTERM);
+        g_spawn_close_pid(voice_rec_pid);
+        voice_rec_pid = 0;
+        g_usleep(150000); /* let arecord flush */
+    }
+    if (access(VOICE_REC_FILE, R_OK) != 0) { return; }
+    if (!conf->api_key[0]) { return; }
+
+    gchar *auth  = g_strdup_printf("Authorization: Bearer %s", conf->api_key);
+    gchar *farg  = g_strdup_printf("file=@%s", VOICE_REC_FILE);
+    gchar *argv[] = {
+        "curl", "-s",
+        VOICE_API_URL,
+        "-H", auth,
+        "-F", "model=" VOICE_MODEL,
+        "-F", farg,
+        "-F", "response_format=text",
+        NULL
+    };
+    GPid   child_pid;
+    gint   stdout_fd;
+    GError *err = NULL;
+    gboolean ok = g_spawn_async_with_pipes(
+        NULL, argv, NULL,
+        G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD |
+        G_SPAWN_STDERR_TO_DEV_NULL,
+        NULL, NULL,
+        &child_pid, NULL, &stdout_fd, NULL, &err);
+    g_free(auth);
+    g_free(farg);
+    g_unlink(VOICE_REC_FILE);
+    if (!ok) { if (err) g_error_free(err); return; }
+
+    VoiceCtx *ctx    = g_new0(VoiceCtx, 1);
+    ctx->terminal    = VTE_TERMINAL(terminal);
+    ctx->child_pid   = child_pid;
+    ctx->response    = g_string_new(NULL);
+    ctx->channel     = g_io_channel_unix_new(stdout_fd);
+    g_io_channel_set_encoding(ctx->channel, NULL, NULL);
+    g_io_channel_set_buffered(ctx->channel, FALSE);
+    g_io_add_watch(ctx->channel, G_IO_IN | G_IO_HUP | G_IO_ERR,
+                   voice_transcribe_output, ctx);
+}
+
+/**
+ * Build the voice input panel (REC / STOP / CLEAR / SEND / ENTER)
+ * @param terminal VTE terminal widget (passed to button callbacks)
+ * @return Voice panel widget
+ */
+static GtkWidget *build_voice_panel(GtkWidget *terminal) {
+#if GTK_CHECK_VERSION(3,2,0)
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *row1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    GtkWidget *row2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    GtkWidget *row3 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+#else
+    GtkWidget *vbox = gtk_vbox_new(FALSE, 2);
+    GtkWidget *row1 = gtk_hbox_new(TRUE, 2);
+    GtkWidget *row2 = gtk_hbox_new(TRUE, 2);
+    GtkWidget *row3 = gtk_hbox_new(FALSE, 0);
+#endif
+    GtkWidget *rec_btn   = gtk_button_new_with_label("REC");
+    GtkWidget *stop_btn  = gtk_button_new_with_label("STOP");
+    GtkWidget *clear_btn = gtk_button_new_with_label("CLEAR");
+    GtkWidget *send_btn  = gtk_button_new_with_label("SEND");
+    GtkWidget *enter_btn = gtk_button_new_with_label("ENTER");
+
+    gtk_box_pack_start(GTK_BOX(row1), rec_btn,   TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(row1), stop_btn,  TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(row2), clear_btn, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(row2), send_btn,  TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(row3), enter_btn, TRUE, TRUE, 0);
+
+    gtk_box_pack_start(GTK_BOX(vbox), row1,  TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), row2,  TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), row3,  TRUE, TRUE, 0);
+
+    g_signal_connect(rec_btn,   "clicked", G_CALLBACK(voice_rec_cb),   terminal);
+    g_signal_connect(stop_btn,  "clicked", G_CALLBACK(voice_stop_cb),  terminal);
+    g_signal_connect(clear_btn, "clicked", G_CALLBACK(voice_clear_cb), terminal);
+    g_signal_connect(send_btn,  "clicked", G_CALLBACK(voice_send_cb),  terminal);
+    g_signal_connect(enter_btn, "clicked", G_CALLBACK(voice_enter_cb), terminal);
+
+    gtk_widget_set_name(vbox, "voiceBox");
+    return vbox;
+}
+
+/**
+ * Toggle between keyboard panel and voice panel
+ * @param widget Calling widget
+ * @param box Kterm container (vbox)
+ */
+static void toggle_voice(GtkWidget *widget, gpointer box) {
+    UNUSED(widget);
+    GtkWidget *keyboard_box = NULL;
+    GList *box_list = gtk_container_get_children(GTK_CONTAINER(box));
+    for (GList *cur = box_list; cur != NULL; cur = cur->next) {
+        const gchar *name = gtk_widget_get_name(GTK_WIDGET(cur->data));
+        if (!strncmp(name, "kbBox", 5)) { keyboard_box = GTK_WIDGET(cur->data); }
+    }
+    g_list_free(box_list);
+    if (!keyboard_box || !voice_panel) { return; }
+
+    if (gtk_widget_get_visible(voice_panel)) {
+        gtk_widget_hide(voice_panel);
+        gtk_widget_show(keyboard_box);
+        conf->kb_on = TRUE;
+    } else {
+        gtk_widget_hide(keyboard_box);
+        gtk_widget_show_all(voice_panel);
+        conf->kb_on = FALSE;
+    }
+}
+
+/* ── end voice input ─────────────────────────────────────────────────────── */
+
 /**
  * Build popup menu
  * @param terminal Terminal widget
@@ -398,27 +624,30 @@ static GtkWidget * build_popup(GtkWidget *terminal, GtkWidget *box) {
     GtkWidget *fontdown_item = gtk_menu_item_new_with_label("Font decrease");
     GtkWidget *color_item = gtk_menu_item_new_with_label("Reverse colors");
     GtkWidget *kb_item = gtk_menu_item_new_with_label("Toggle keyboard");
+    GtkWidget *voice_item = gtk_menu_item_new_with_label("Toggle voice");
     GtkWidget *reset_item = gtk_menu_item_new_with_label("Reset terminal");
 #ifdef KINDLE
     GtkWidget *rotate_item = gtk_menu_item_new_with_label("Screen rotate");
 #endif
     GtkWidget *quit_item = gtk_menu_item_new_with_label("Quit");
-    
+
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), fontup_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), fontdown_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), color_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), kb_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), voice_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset_item);
 #ifdef KINDLE
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), rotate_item);
 #endif
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
-    
-    
+
+
     g_signal_connect(G_OBJECT(fontup_item), "activate", G_CALLBACK(fontup), (gpointer) terminal);
     g_signal_connect(G_OBJECT(fontdown_item), "activate", G_CALLBACK(fontdown), (gpointer) terminal);
     g_signal_connect(G_OBJECT(color_item), "activate", G_CALLBACK(reverse_colors), (gpointer) terminal);
     g_signal_connect(G_OBJECT(kb_item), "activate", G_CALLBACK(toggle_keyboard), box);
+    g_signal_connect(G_OBJECT(voice_item), "activate", G_CALLBACK(toggle_voice), box);
     g_signal_connect(G_OBJECT(reset_item), "activate", G_CALLBACK(reset_terminal), (gpointer) terminal);
 #ifdef KINDLE
     g_signal_connect(G_OBJECT(rotate_item), "activate", G_CALLBACK(screen_rotate), box);
@@ -742,6 +971,11 @@ gint main(gint argc, gchar **argv) {
     gtk_widget_set_name(terminal, "termBox");
     gtk_box_pack_start(GTK_BOX(vbox), terminal, TRUE, TRUE, 0);
     
+    /* Voice panel — built here so callbacks have a valid terminal pointer.
+       Starts hidden; "Toggle voice" in the context menu shows/hides it. */
+    voice_panel = build_voice_panel(terminal);
+    gtk_box_pack_end(GTK_BOX(vbox), voice_panel, FALSE, FALSE, 0);
+
     GtkWidget *menu = build_popup(terminal, vbox);
     // signals
     g_signal_connect(window, "delete_event", G_CALLBACK(gtk_main_quit), NULL);
@@ -758,6 +992,7 @@ gint main(gint argc, gchar **argv) {
     D g_signal_connect(terminal, "key-press-event", G_CALLBACK(debug_key_event), NULL);
     
     gtk_widget_show_all(window);
+    gtk_widget_hide(voice_panel); /* always starts hidden */
     if (!conf->kb_on) {
         gtk_widget_hide(keyboard_box);
     }
