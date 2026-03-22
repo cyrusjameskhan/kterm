@@ -81,8 +81,11 @@ jobs:
             CC=arm-linux-gnueabihf-gcc \
             PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
             CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-            LDFLAGS="-Wl,--as-needed -L/opt/vte-static/lib -Wl,-Bstatic -lvte -Wl,-Bdynamic -lncurses"
-          make -j$(nproc)
+            LDFLAGS="-Wl,--as-needed"
+          # /opt/vte-static/lib has only libvte.a (--disable-shared), so -lvte from
+          # pkg-config resolves to the static archive automatically — no -Bstatic needed.
+          # Pass -lncurses via LIBS so tgetent/tgetstr (called inside libvte.a) resolve.
+          make -j$(nproc) LIBS="-lncurses"
           echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
         '
 
