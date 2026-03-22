@@ -15,13 +15,13 @@ jobs:
     - name: Add armhf architecture
       run: |
         sudo dpkg --add-architecture armhf
-        # Restrict ALL existing apt sources to amd64 only (security.ubuntu.com has no armhf)
-        sudo sed -i -E 's/^deb (https?:\/\/)/deb [arch=amd64] \1/' /etc/apt/sources.list
-        for f in /etc/apt/sources.list.d/*.list; do
-          [ -f "$f" ] && sudo sed -i -E 's/^deb (https?:\/\/)/deb [arch=amd64] \1/' "$f"
-        done
+        # Comment out security.ubuntu.com — it has no armhf packages
+        sudo grep -rl 'security.ubuntu.com' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | \
+          xargs -r sudo sed -i '/security\.ubuntu\.com/s/^/#/'
         # Add armhf sources from ports.ubuntu.com
-        printf 'deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse\ndeb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse\ndeb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse\n' | sudo tee /etc/apt/sources.list.d/armhf.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/armhf.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/armhf.list
         sudo apt-get update -qq
 
     - name: Install ARM cross-compiler and ARM GTK2/VTE libraries
