@@ -17,9 +17,9 @@ jobs:
         docker run --rm -v "$PWD:/work" -w /work ubuntu:22.04 bash -c '
           set -e
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update -qq
           dpkg --add-architecture armhf
-          # Add armhf from ports.ubuntu.com (archive.ubuntu.com has no armhf binary)
+          # Enable universe (libvte-common is there); add armhf from ports.ubuntu.com
+          sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
           echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
