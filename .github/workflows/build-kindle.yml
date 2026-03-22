@@ -53,7 +53,7 @@ jobs:
             CC=arm-linux-gnueabihf-gcc \
             PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
             CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-            LDFLAGS="-Wl,--as-needed -Wl,-Bstatic -lvte -Wl,-Bdynamic"
+            LDFLAGS="-Wl,--as-needed -Wl,-Bstatic -lvte -ltinfo -Wl,-Bdynamic"
           make -j$(nproc)
           echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
         '
