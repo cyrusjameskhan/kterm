@@ -19,6 +19,11 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           apt-get update -qq
           dpkg --add-architecture armhf
+          # Restrict existing sources to amd64; add armhf from ports.ubuntu.com
+          sed -i "s/^deb /deb [arch=amd64] /" /etc/apt/sources.list
+          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
+          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
+          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
           apt-get update -qq
           apt-get install -y --no-install-recommends \
             gcc-arm-linux-gnueabihf \
@@ -28,9 +33,8 @@ jobs:
             libtinfo-dev:armhf \
             libdbus-1-dev:armhf \
             autoconf automake make
-          PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
-          PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
-          export PKG_CONFIG_PATH PKG_CONFIG_LIBDIR
+          export PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
+          export PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
           ./autogen.sh
           ./configure \
             --host=arm-linux-gnueabihf \
