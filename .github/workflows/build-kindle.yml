@@ -44,6 +44,8 @@ jobs:
           apt-get download libvte-common libvte9:armhf libvte-dev:armhf 2>&1
           for deb in *.deb; do dpkg-deb -x "$deb" /; done
           cd /work
+          # Remove libtinfo.so symlink so configure falls back to libncurses.so.5 (what Kindle has)
+          rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
           export PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig
           export PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
           ./autogen.sh
@@ -53,7 +55,7 @@ jobs:
             CC=arm-linux-gnueabihf-gcc \
             PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
             CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-            LDFLAGS="-Wl,--as-needed -Wl,-Bstatic -lvte -ltinfo -Wl,-Bdynamic"
+            LDFLAGS="-Wl,--as-needed -Wl,-Bstatic -lvte -Wl,-Bdynamic"
           make -j$(nproc)
           echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
         '
