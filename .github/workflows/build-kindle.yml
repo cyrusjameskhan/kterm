@@ -12,90 +12,83 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build ARM binary in Docker (static VTE from source)
+    - name: Set up armhf cross-compilation
       run: |
-        docker run --rm -v "$PWD:/work" -w /work ubuntu:22.04 bash -c '
-          set -e
-          export DEBIAN_FRONTEND=noninteractive
-          dpkg --add-architecture armhf
-          # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe
-          sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
-          sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
-          # Add armhf binary packages from ports.ubuntu.com
-          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" >> /etc/apt/sources.list
-          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" >> /etc/apt/sources.list
-          echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" >> /etc/apt/sources.list
-          apt-get update -qq
+        sudo dpkg --add-architecture armhf
+        # Restrict archive.ubuntu.com to amd64 (no 404s), enable universe
+        sudo sed -i "s/ main restricted$/ main restricted universe multiverse/" /etc/apt/sources.list
+        sudo sed -i "s/^deb http/deb [arch=amd64] http/" /etc/apt/sources.list
+        # Add armhf binary packages from ports.ubuntu.com
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+        echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+        sudo apt-get update -qq
 
-          # Install all packages in ONE call so apt resolves conflicts upfront.
-          # Use libncurses-dev:armhf (ncurses6), NOT libncurses5-dev:armhf — the latter
-          # conflicts with libncurses-dev:amd64 which gcc-arm-linux-gnueabihf depends on.
-          # libglib2.0-dev-bin: glib-mkenums/glib-genmarshal for VTE build (no amd64 headers).
-          # libwebp/libzstd:armhf needed at link time (GTK2 pkg-config transitive deps).
-          apt-get install -y --no-install-recommends \
-            gcc-arm-linux-gnueabihf \
-            pkg-config \
-            autoconf automake libtool make \
-            intltool libxml-parser-perl \
-            libglib2.0-dev-bin \
-            curl \
-            libgtk2.0-dev:armhf \
-            libncurses-dev:armhf \
-            libdbus-1-dev:armhf \
-            libwebp-dev:armhf \
-            libzstd-dev:armhf
+        # Install all packages in ONE call so apt resolves conflicts upfront.
+        # Use libncurses-dev:armhf (ncurses6) — libncurses5-dev:armhf conflicts with
+        # libncurses-dev:amd64 which gcc-arm-linux-gnueabihf depends on.
+        # libglib2.0-dev-bin: glib-mkenums/glib-genmarshal for VTE build (no amd64 headers).
+        # libwebp/libzstd:armhf needed at link time (GTK2 pkg-config transitive deps).
+        sudo apt-get install -y --no-install-recommends \
+          gcc-arm-linux-gnueabihf \
+          binutils-arm-linux-gnueabihf \
+          pkg-config \
+          autoconf automake libtool make \
+          intltool libxml-parser-perl \
+          libglib2.0-dev-bin \
+          curl \
+          libgtk2.0-dev:armhf \
+          libncurses-dev:armhf \
+          libdbus-1-dev:armhf \
+          libwebp-dev:armhf \
+          libzstd-dev:armhf
 
-          # Remove libtinfo.so BEFORE building libvte so that libvte's configure
-          # falls back to -lncurses (present as libncurses.so.5 on Kindle).
-          # If removed after, vte.pc lists -ltinfo which is absent on the Kindle.
-          rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
+        # Remove libtinfo.so BEFORE building libvte so that libvte's configure
+        # falls back to -lncurses (present as libncurses.so.5 on Kindle).
+        # If removed after, vte.pc lists -ltinfo which is absent on the Kindle.
+        sudo rm -f /usr/lib/arm-linux-gnueabihf/libtinfo.so /usr/lib/arm-linux-gnueabihf/libtinfo.a
 
-          # Ensure cross-compiler is reachable (non-interactive bash may have trimmed PATH)
-          export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          echo "PATH=$PATH"
-          find /usr -name "arm-linux-gnueabihf-gcc*" 2>/dev/null | sort
+        # Sanity-check the cross-compiler
+        arm-linux-gnueabihf-gcc --version
+        echo "int main(){}" | arm-linux-gnueabihf-gcc -x c - -o /tmp/cc_test && echo "CC OK"
 
-          # Sanity-check the cross-compiler before building VTE
-          echo "int main(){}" | arm-linux-gnueabihf-gcc -x c - -o /tmp/cc_test && echo "CC OK" || echo "CC BROKEN"
-          arm-linux-gnueabihf-gcc -v 2>&1 | tail -3
+    - name: Build static libvte 0.28.2 for armhf
+      run: |
+        mkdir -p /tmp/vte-src && cd /tmp/vte-src
+        curl -sLo vte.orig.tar.xz \
+          "http://archive.ubuntu.com/ubuntu/pool/main/v/vte/vte_0.28.2.orig.tar.xz"
+        tar xJf vte.orig.tar.xz
+        cd vte-0.28.2
+        ./configure \
+          --host=arm-linux-gnueabihf \
+          --prefix=/opt/vte-static \
+          --enable-static \
+          --disable-shared \
+          --disable-python \
+          --disable-gnome-pty-helper \
+          CC=arm-linux-gnueabihf-gcc \
+          PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
+          CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
+          PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
+          PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig \
+        || { echo "=== config.log (first 100 lines) ==="; head -100 config.log; exit 1; }
+        make -j$(nproc)
+        sudo make install
 
-          # Fetch VTE 0.28.2 orig tarball directly from Ubuntu pool (no deb-src needed)
-          mkdir -p /tmp/vte-src && cd /tmp/vte-src
-          curl -sLo vte.orig.tar.xz \
-            "http://archive.ubuntu.com/ubuntu/pool/main/v/vte/vte_0.28.2.orig.tar.xz"
-          tar xJf vte.orig.tar.xz
-          cd vte-0.28.2
-          ./configure \
-            --host=arm-linux-gnueabihf \
-            --prefix=/opt/vte-static \
-            --enable-static \
-            --disable-shared \
-            --disable-python \
-            --disable-gnome-pty-helper \
-            CC=arm-linux-gnueabihf-gcc \
-            PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
-            CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-            PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig \
-            PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig \
-          || { echo "=== config.log (first 100 lines) ==="; head -100 config.log; exit 1; }
-          make -j$(nproc)
-          make install
-
-          # Build kterm — configure.ac handles static VTE detection automatically
-          cd /work
-          export PKG_CONFIG_PATH=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig
-          export PKG_CONFIG_LIBDIR=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
-          ./autogen.sh
-          ./configure \
-            --host=arm-linux-gnueabihf \
-            --enable-kindle \
-            CC=arm-linux-gnueabihf-gcc \
-            PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
-            CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
-          || { echo "=== config.log (last 40 lines) ==="; tail -40 config.log; exit 1; }
-          make -j$(nproc)
-          echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
-        '
+    - name: Build kterm
+      run: |
+        export PKG_CONFIG_PATH=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig
+        export PKG_CONFIG_LIBDIR=/opt/vte-static/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+        ./autogen.sh
+        ./configure \
+          --host=arm-linux-gnueabihf \
+          --enable-kindle \
+          CC=arm-linux-gnueabihf-gcc \
+          PKG_CONFIG=arm-linux-gnueabihf-pkg-config \
+          CFLAGS="-O2 -march=armv7-a -mfpu=neon -mfloat-abi=hard" \
+        || { echo "=== config.log (last 40 lines) ==="; tail -40 config.log; exit 1; }
+        make -j$(nproc)
+        echo "=== NEEDED libs ===" && arm-linux-gnueabihf-objdump -p kterm | grep NEEDED
 
     - name: Verify ARM binary
       run: file kterm
